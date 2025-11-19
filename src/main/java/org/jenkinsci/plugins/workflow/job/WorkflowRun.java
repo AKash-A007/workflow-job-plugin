@@ -182,6 +182,18 @@ public final class WorkflowRun extends Run<WorkflowJob,WorkflowRun> implements F
      * This field is semi-final --- once set the value will never be modified.
      */
     private volatile Set<String> culprits;
+    public void bindQueueItem(Queue.Item item) {
+    if (item != null) {
+        long qid = item.getId();
+        setQueueId(qid);
+        try {
+            save();
+        } catch (IOException e) {
+            LOGGER.log(Level.WARNING, "Unable to persist queueId for run " + this, e);
+        }
+    }
+}
+
 
     /**
      * Flag for whether or not the build has completed somehow.
@@ -292,6 +304,20 @@ public final class WorkflowRun extends Run<WorkflowJob,WorkflowRun> implements F
             throw sleep();
         }
         try {
+            // --- FIX: capture queueId early ---
+            if (getQueueId() == 0) {
+                Queue queue = Jenkins.get().getQueue();
+                for (Queue.Item item : queue.getItems()) {
+                    if (item.task instanceof ExecutorStepExecution.PlaceholderTask placeholder) {
+                        if (placeholder.runId.equals(getExternalizableId())) {
+                            bindQueueItem(item);  // <---- call your method
+                            break;
+                        }
+                    }
+                }
+            }
+            // -----------------------------------
+
             onStartBuilding();
             charset = "UTF-8"; // cannot override getCharset, and various Run methods do not call it anyway
             BuildListener myListener = getListener();
